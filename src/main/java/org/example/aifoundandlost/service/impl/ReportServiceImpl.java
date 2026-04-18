@@ -5,30 +5,33 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.example.aifoundandlost.entity.Report;
+import org.example.aifoundandlost.exception.BusinessException;
 import org.example.aifoundandlost.mapper.ReportMapper;
 import org.example.aifoundandlost.service.ReportService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ReportServiceImpl extends ServiceImpl<ReportMapper, Report> implements ReportService {
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean addReport(Report report) {
         // 校验1：用户必须登录
         if (report.getReportId() == null) {
-            throw new RuntimeException("请先登录");
+            throw new BusinessException(401, "请先登录");
         }
         // 校验2：举报目标不能为空
         if (report.getTargetType() == null || report.getTargetId() == null) {
-            throw new RuntimeException("举报目标不能为空");
+            throw new BusinessException(400, "举报目标不能为空");
         }
-        // 校验3：必须选择举报原因 （因为是选项，只判断是否为null）
+        // 校验3：必须选择举报原因
         if (report.getReason() == null) {
-            throw new RuntimeException("请选择举报原因");
+            throw new BusinessException(400, "请选择举报原因");
         }
-        // 校验4：限制原因值在合法选项内（可选，防止非法值）
+        // 校验4：举报原因值合法范围
         if (report.getReason() < 1 || report.getReason() > 5) {
-            throw new RuntimeException("举报原因选项不合法");
+            throw new BusinessException(400, "举报原因选项不合法");
         }
 
         // 初始状态为待处理
@@ -47,7 +50,13 @@ public class ReportServiceImpl extends ServiceImpl<ReportMapper, Report> impleme
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean handleReport(Long rid, Integer status) {
+        // 校验举报是否存在
+        Report report = getById(rid);
+        if (report == null) {
+            throw new BusinessException(404, "该举报记录不存在");
+        }
         return lambdaUpdate()
                 .eq(Report::getRid, rid)
                 .set(Report::getStatus, status)

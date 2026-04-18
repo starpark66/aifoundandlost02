@@ -7,10 +7,12 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.annotation.Resource;
 import org.example.aifoundandlost.entity.LostItem;
 import org.example.aifoundandlost.entity.LikesRecord;
+import org.example.aifoundandlost.exception.BusinessException;
 import org.example.aifoundandlost.mapper.LostItemMapper;
 import org.example.aifoundandlost.service.LostItemService;
 import org.example.aifoundandlost.service.LikesRecordService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 @Service
@@ -20,15 +22,16 @@ public class LostItemServiceImpl extends ServiceImpl<LostItemMapper, LostItem> i
     private LikesRecordService likesRecordService;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean publishLostItem(LostItem lostItem) {
         if (lostItem.getUid() == null) {
-            throw new RuntimeException("用户未登录");
+            throw new BusinessException(401, "用户未登录");
         }
         if (!StringUtils.hasText(lostItem.getName()) || !StringUtils.hasText(lostItem.getDescription())) {
-            throw new RuntimeException("物品名称和描述不能为空");
+            throw new BusinessException(400, "物品名称和描述不能为空");
         }
         if (lostItem.getLostTime() == null) {
-            throw new RuntimeException("丢失时间不能为空");
+            throw new BusinessException(400, "丢失时间不能为空");
         }
         lostItem.setStatus(0);
         lostItem.setLikes(0L);
@@ -55,28 +58,35 @@ public class LostItemServiceImpl extends ServiceImpl<LostItemMapper, LostItem> i
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean updateLostItem(LostItem lostItem) {
         LostItem dbItem = getById(lostItem.getLid());
         if (dbItem == null) {
-            throw new RuntimeException("该失物不存在");
+            throw new BusinessException(404, "该失物不存在");
         }
         return updateById(lostItem);
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean deleteLostItem(Long lid, Long uid) {
         LostItem item = getById(lid);
         if (item == null) {
-            throw new RuntimeException("失物不存在");
+            throw new BusinessException(404, "失物不存在");
         }
         if (!item.getUid().equals(uid)) {
-            throw new RuntimeException("无权限删除该失物");
+            throw new BusinessException(403, "无权限删除该失物");
         }
         return removeById(lid);
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean changeStatus(Long lid, Integer status) {
+        LostItem item = getById(lid);
+        if (item == null) {
+            throw new BusinessException(404, "失物不存在");
+        }
         return lambdaUpdate()
                 .eq(LostItem::getLid, lid)
                 .set(LostItem::getStatus, status)
@@ -84,9 +94,10 @@ public class LostItemServiceImpl extends ServiceImpl<LostItemMapper, LostItem> i
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean doLike(Long lid, Long uid) {
         if (isLiked(lid, uid)) {
-            return false;
+            throw new BusinessException(400, "已点赞过该失物");
         }
         LikesRecord record = new LikesRecord();
         record.setUid(uid);
@@ -102,6 +113,7 @@ public class LostItemServiceImpl extends ServiceImpl<LostItemMapper, LostItem> i
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean cancelLike(Long lid, Long uid) {
         boolean removed = likesRecordService.lambdaUpdate()
                 .eq(LikesRecord::getUid, uid)
@@ -114,6 +126,8 @@ public class LostItemServiceImpl extends ServiceImpl<LostItemMapper, LostItem> i
                     .eq(LostItem::getLid, lid)
                     .setSql("likes = likes - 1")
                     .update();
+        }else {
+            throw new BusinessException(400, "未点赞该失物，无法取消");
         }
         return removed;
     }

@@ -7,10 +7,12 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.annotation.Resource;
 import org.example.aifoundandlost.entity.FoundItem;
 import org.example.aifoundandlost.entity.LikesRecord;
+import org.example.aifoundandlost.exception.BusinessException;
 import org.example.aifoundandlost.mapper.FoundItemMapper;
 import org.example.aifoundandlost.service.FoundItemService;
 import org.example.aifoundandlost.service.LikesRecordService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 @Service
@@ -21,15 +23,16 @@ public class FoundItemServiceImpl extends ServiceImpl<FoundItemMapper, FoundItem
     private LikesRecordService likesRecordService;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean publishFoundItem(FoundItem foundItem) {
         if (foundItem.getUid() == null) {
-            throw new RuntimeException("用户未登录");
+            throw new BusinessException(401, "用户未登录");
         }
         if (!StringUtils.hasText(foundItem.getName()) || !StringUtils.hasText(foundItem.getDescription())) {
-            throw new RuntimeException("物品名称和描述不能为空");
+            throw new BusinessException(400, "物品名称和描述不能为空");
         }
         if (foundItem.getFoundTime() == null) {
-            throw new RuntimeException("拾获时间不能为空");
+            throw new BusinessException(400, "拾获时间不能为空");
         }
 
         foundItem.setStatus(0);
@@ -57,28 +60,35 @@ public class FoundItemServiceImpl extends ServiceImpl<FoundItemMapper, FoundItem
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean updateFoundItem(FoundItem foundItem) {
         FoundItem dbItem = getById(foundItem.getFid());
         if (dbItem == null) {
-            throw new RuntimeException("该拾获物品不存在");
+            throw new BusinessException(404, "该拾获物品不存在");
         }
         return updateById(foundItem);
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean deleteFoundItem(Long fid, Long uid) {
         FoundItem item = getById(fid);
         if (item == null) {
-            throw new RuntimeException("记录不存在");
+            throw new BusinessException(404, "记录不存在");
         }
         if (!item.getUid().equals(uid)) {
-            throw new RuntimeException("无权限删除");
+            throw new BusinessException(403, "无权限删除");
         }
         return removeById(fid);
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean changeStatus(Long fid, Integer status) {
+        FoundItem item = getById(fid);
+        if (item == null) {
+            throw new BusinessException(404, "拾获物品不存在");
+        }
         return lambdaUpdate()
                 .eq(FoundItem::getFid, fid)
                 .set(FoundItem::getStatus, status)
@@ -86,9 +96,10 @@ public class FoundItemServiceImpl extends ServiceImpl<FoundItemMapper, FoundItem
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean doLike(Long fid, Long uid) {
         if (isLiked(fid, uid)) {
-            return false;
+            throw new BusinessException(400, "已点赞过该拾获物品");
         }
         LikesRecord record = new LikesRecord();
         record.setUid(uid);
@@ -104,14 +115,16 @@ public class FoundItemServiceImpl extends ServiceImpl<FoundItemMapper, FoundItem
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean cancelLike(Long fid, Long uid) {
         boolean removed = likesRecordService.removeLike(2, fid, uid);
-        if (removed) {
-            lambdaUpdate()
-                    .eq(FoundItem::getFid, fid)
-                    .setSql("likes = likes - 1")
-                    .update();
+        if (!removed) {
+            throw new BusinessException(400, "未点赞该拾获物品，无法取消");
         }
+        lambdaUpdate()
+                .eq(FoundItem::getFid, fid)
+                .setSql("likes = likes - 1")
+                .update();
         return removed;
     }
 
